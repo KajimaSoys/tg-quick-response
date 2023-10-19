@@ -1,6 +1,7 @@
+import selenium.common.exceptions
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import StaleElementReferenceException, NoSuchElementException
 
 import traceback
 import time
@@ -54,7 +55,8 @@ def extract_chats(driver):
 
     while True:
         chat_list_element = driver.find_elements(By.CSS_SELECTOR, 'div.chat-list div')[1]
-        current_chats = chat_list_element.find_elements(By.CSS_SELECTOR, 'div.ListItem.Chat.chat-item-clickable.private')
+        current_chats = chat_list_element.find_elements(By.CSS_SELECTOR,
+                                                        'div.ListItem.Chat.chat-item-clickable.private')
 
         if current_chats == previous_chats:
             unchanged_count += 1
@@ -99,13 +101,14 @@ def back_top(driver, scrollable_container, shift):
         shift = int(first_visible_chat.get_attribute('style').replace('top: ', '').replace('px;', ''))
 
 
-def scan_new_chats(driver, chat_list, welcome_message):
+def scan_new_chats(driver, chat_list, messages):
     previous_chats = []
 
     while True:
         print('scanning new chats..')
         chat_list_element = driver.find_elements(By.CSS_SELECTOR, 'div.chat-list div')[1]
-        current_chats = chat_list_element.find_elements(By.CSS_SELECTOR, 'div.ListItem.Chat.chat-item-clickable.private')
+        current_chats = chat_list_element.find_elements(By.CSS_SELECTOR,
+                                                        'div.ListItem.Chat.chat-item-clickable.private')
 
         if current_chats != previous_chats:
             for chat in current_chats:
@@ -114,10 +117,13 @@ def scan_new_chats(driver, chat_list, welcome_message):
                 except StaleElementReferenceException:
                     print('StaleElementReferenceException occurred!')
                     continue
+                except NoSuchElementException:
+                    print('NoSuchElementException occurred!')
+                    continue
                 chat_id = int(chat_id.replace('https://web.telegram.org/a/#', ''))
                 if chat_id not in chat_list:
                     print("new_chat!")
-                    send_message(driver, chat, welcome_message)
+                    send_message(driver, chat, messages)
                     chat_list.add(chat_id)
                 else:
                     print(f'chat with {chat_id} already in chat_list')
@@ -126,30 +132,45 @@ def scan_new_chats(driver, chat_list, welcome_message):
         time.sleep(0.5)
 
 
-def send_message(driver, chat, welcome_message):
+def send_message(driver, chat, messages):
     chat.click()
     time.sleep(0.5)
     input_field = driver.find_element(By.ID, 'editable-message-text')
-    input_field.click()
-    js_command = """
-      var elm = arguments[0], txt = arguments[1];
-      elm.innerHTML += txt;
-      elm.dispatchEvent(new Event('change'));
-      """
 
+    driver.execute_script("arguments[0].click();", input_field)
+    driver.execute_script(f'arguments[0].innerText = arguments[1];', input_field, messages['first_message'])
+    driver.execute_script("var event = new Event('input', { 'bubbles': true }); arguments[0].dispatchEvent(event);",
+                          input_field)
 
-    driver.execute_script(js_command, input_field, welcome_message)
+    time.sleep(0.1)
+    send_button = driver.find_element(By.CSS_SELECTOR, 'button.Button.send')
 
-    time.sleep(20)
+    time.sleep(0.2)
+    send_button.click()
 
-    # send_button = driver.find_element(By.CSS_SELECTOR, 'button.Button.send')
-    # send_button.click()
+    time.sleep(0.5)
+
+    driver.execute_script("arguments[0].click();", input_field)
+    for char in messages['second_message']:
+        driver.execute_script(f"arguments[0].innerText += '{char}';", input_field)
+        driver.execute_script("var event = new Event('input', { 'bubbles': true }); arguments[0].dispatchEvent(event);",
+                              input_field)
+        time.sleep(0.1)
+
+    time.sleep(0.5)
 
 
 def main(use_tokens):
-    with open("message.txt", "r", encoding="utf-8") as file:
-        welcome_message = file.read()
-    print(welcome_message)
+    with open("first_message.txt", "r", encoding="utf-8") as file:
+        first_message = file.read()
+
+    with open("second_message.txt", "r", encoding="utf-8") as file:
+        second_message = file.read()
+
+    messages = {
+        'first_message': first_message,
+        'second_message': second_message,
+    }
 
     driver = webdriver.Chrome(options=options)
     driver.maximize_window()
@@ -158,8 +179,8 @@ def main(use_tokens):
         authorization(driver, use_tokens)
 
         chat_list = extract_chats(driver)
-
-        scan_new_chats(driver, chat_list, welcome_message)
+        
+        scan_new_chats(driver, chat_list, messages)
 
         time.sleep(300)
     except Exception as E:
@@ -173,5 +194,5 @@ def set_item(driver, key, value):
 
 
 if __name__ == '__main__':
-    use_tokens = True
+    use_tokens = False
     main(use_tokens)
