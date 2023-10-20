@@ -125,6 +125,7 @@ def scan_new_chats(driver, chat_list, messages):
                     print("new_chat!")
                     send_message(driver, chat, messages)
                     chat_list.add(chat_id)
+                    to_saved_messages(driver)
                 else:
                     print(f'chat with {chat_id} already in chat_list')
 
@@ -160,6 +161,14 @@ def send_message(driver, chat, messages):
     time.sleep(0.5)
 
 
+def to_saved_messages(driver):
+    try:
+        saved_messages_element = driver.find_element(By.CSS_SELECTOR, ".ListItem.Chat:has(div.saved-messages)")
+        saved_messages_element.click()
+    except Exception as E:
+        print(traceback.format_exc())
+
+
 def main(use_tokens):
     with open("first_message.txt", "r", encoding="utf-8") as file:
         first_message = file.read()
@@ -179,7 +188,7 @@ def main(use_tokens):
         authorization(driver, use_tokens)
 
         chat_list = extract_chats(driver)
-        
+
         scan_new_chats(driver, chat_list, messages)
 
         time.sleep(300)
