@@ -6,10 +6,19 @@ from selenium.common.exceptions import StaleElementReferenceException, NoSuchEle
 import traceback
 import time
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 
 options = webdriver.ChromeOptions()
 options.add_argument(
     '--user-agent=""Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.5810.200 Safari/537.36""')
+options.add_experimental_option('excludeSwitches', ['enable-logging'])
+
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s|%(name)s|%(levelname)s| %(message)s')
+logger = logging.getLogger(__name__)
+logging.getLogger('selenium').setLevel(logging.WARNING)
+
 
 
 def authorization(driver, use_tokens: bool):
@@ -26,7 +35,7 @@ def authorization(driver, use_tokens: bool):
             driver.refresh()
             time.sleep(3)
         except FileNotFoundError:
-            print('File not found, please authorize in telegram, you have 60 seconds')
+            logger.warning('File not found, please authorize in telegram, you have 60 seconds')
             driver.get("https://web.telegram.org/a/")
             time.sleep(60)
             tokens = driver.execute_script(
@@ -66,7 +75,7 @@ def extract_chats(driver):
                 try:
                     chat_id = chat.find_element(By.CSS_SELECTOR, 'a').get_attribute('href')
                 except StaleElementReferenceException:
-                    print('StaleElementReferenceException occurred!')
+                    logger.exception('StaleElementReferenceException occurred!')
                     continue
                 chat_id = int(chat_id.replace('https://web.telegram.org/a/#', ''))
                 chat_list.add(chat_id)
@@ -84,8 +93,8 @@ def extract_chats(driver):
         driver.execute_script("arguments[0].scrollBy(0, 2000);", scrollable_container)
         time.sleep(1)
 
-    print(f'Parsed chat list: {chat_list}')
-    print(f'Count of parsed chats: {len(chat_list)}')
+    logger.info(f'Parsed chat list: {chat_list}')
+    logger.info(f'Count of parsed chats: {len(chat_list)}')
     return chat_list
 
 
@@ -105,7 +114,7 @@ def scan_new_chats(driver, chat_list, messages):
     previous_chats = []
 
     while True:
-        print('scanning new chats..')
+        logger.info('scanning new chats..')
         chat_list_element = driver.find_elements(By.CSS_SELECTOR, 'div.chat-list div')[1]
         current_chats = chat_list_element.find_elements(By.CSS_SELECTOR,
                                                         'div.ListItem.Chat.chat-item-clickable.private')
@@ -115,19 +124,19 @@ def scan_new_chats(driver, chat_list, messages):
                 try:
                     chat_id = chat.find_element(By.CSS_SELECTOR, 'a').get_attribute('href')
                 except StaleElementReferenceException:
-                    print('StaleElementReferenceException occurred!')
+                    logger.exception('StaleElementReferenceException occurred!')
                     continue
                 except NoSuchElementException:
-                    print('NoSuchElementException occurred!')
+                    logger.exception('NoSuchElementException occurred!')
                     continue
                 chat_id = int(chat_id.replace('https://web.telegram.org/a/#', ''))
                 if chat_id not in chat_list:
-                    print("new_chat!")
+                    logger.info("new_chat!")
                     send_message(driver, chat, messages)
                     chat_list.add(chat_id)
                     to_saved_messages(driver)
                 else:
-                    print(f'chat with {chat_id} already in chat_list')
+                    logger.info(f'chat with {chat_id} already in chat_list')
 
         previous_chats = current_chats
         time.sleep(0.5)
@@ -166,7 +175,7 @@ def to_saved_messages(driver):
         saved_messages_element = driver.find_element(By.CSS_SELECTOR, ".ListItem.Chat:has(div.saved-messages)")
         saved_messages_element.click()
     except Exception as E:
-        print(traceback.format_exc())
+        logger.exception()
 
 
 def main(use_tokens):
@@ -193,7 +202,7 @@ def main(use_tokens):
 
         time.sleep(300)
     except Exception as E:
-        print(traceback.format_exc())
+        logger.exception()
     finally:
         driver.quit()
 
