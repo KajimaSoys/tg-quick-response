@@ -59,10 +59,16 @@ def extract_chats(driver):
     chat_list = set()
     unchanged_count = 0
 
+    driver.execute_script("console.log('Вызван метод сбор списка чатов');")
+    driver.execute_script("console.log('Поиск scrollable_container - div.chat-list');")
+
     scrollable_container = driver.find_element(By.CSS_SELECTOR, 'div.chat-list')
     driver.execute_script("arguments[0].scrollBy(0, -20000);", scrollable_container)
 
     previous_chats = []
+
+    driver.execute_script("console.log('scrollable_container найден');")
+    driver.execute_script("console.log('Запущен сбор списка чатов');")
 
     while True:
         chat_list_element = driver.find_elements(By.CSS_SELECTOR, 'div.chat-list div')[1]
@@ -71,13 +77,21 @@ def extract_chats(driver):
 
         if current_chats == previous_chats:
             unchanged_count += 1
+            driver.execute_script("console.log(`Текущий список чатов идентичен предыдущему. unchanged_count = ${arguments[0]}`);", unchanged_count)
         else:
             unchanged_count = 0
             for chat in current_chats:
                 try:
                     chat_id = chat.find_element(By.CSS_SELECTOR, 'a').get_attribute('href')
                 except StaleElementReferenceException:
+                    driver.execute_script(
+                        "console.log('При парсинге идентификатора произошла ошибка StaleElementReferenceException');")
                     logger.exception('StaleElementReferenceException occurred!')
+                    continue
+                except Exception as E:
+                    driver.execute_script(
+                        "console.log('При парсинге идентификатора произошла ошибка', arguments[0]);", chat)
+                    logger.exception(E)
                     continue
                 chat_id = int(chat_id.replace('https://web.telegram.org/a/#', ''))
                 chat_list.add(chat_id)
@@ -85,9 +99,11 @@ def extract_chats(driver):
             driver.execute_script("arguments[0].scrollBy(0, -200);", scrollable_container)
             driver.execute_script("arguments[0].scrollBy(0, 400);", scrollable_container)
             time.sleep(1)
-        if unchanged_count >= 3:
+        if unchanged_count >= 5:
             first_visible_chat = current_chats[0]
             shift = int(first_visible_chat.get_attribute('style').replace('top: ', '').replace('px;', ''))
+            driver.execute_script(
+                "console.log('Сбор чатов закончен, возврат к началу диалогов');")
             back_top(driver, scrollable_container, shift)
             break
         previous_chats = current_chats
@@ -97,23 +113,48 @@ def extract_chats(driver):
 
     logger.info(f'Parsed chat list: {chat_list}')
     logger.info(f'Count of parsed chats: {len(chat_list)}')
+    driver.execute_script("console.log('Сбор чатов окончен');")
+    driver.execute_script("console.log('Кол-во собранных чатов', arguments[0]);", len(chat_list))
     return chat_list
 
 
 def back_top(driver, scrollable_container, shift):
+    attempts = 0
+    last_first_visible_chat = None
+
     while shift != 0:
         driver.execute_script("arguments[0].scrollBy(0, -2000);", scrollable_container)
         time.sleep(0.5)
 
-        chat_list_element = driver.find_elements(By.CSS_SELECTOR, 'div.chat-list div')[1]
-        current_chats = chat_list_element.find_elements(By.CSS_SELECTOR, 'div.ListItem.Chat')
+        try:
+            chat_list_element = driver.find_elements(By.CSS_SELECTOR, 'div.chat-list div')[1]
+            current_chats = chat_list_element.find_elements(By.CSS_SELECTOR, 'div.ListItem.Chat')
+            first_visible_chat = current_chats[0]
+            style_attr = first_visible_chat.get_attribute('style')
+            shift = int(style_attr.replace('top: ', '').replace('px;', '')) if style_attr else 100
 
-        first_visible_chat = current_chats[0]
-        shift = int(first_visible_chat.get_attribute('style').replace('top: ', '').replace('px;', ''))
+            if last_first_visible_chat == first_visible_chat:
+                attempts += 1
+                time.sleep(0.3)
+            else:
+                attempts = 0
+
+            last_first_visible_chat = first_visible_chat
+
+            if attempts >= 5:
+                logger.info("Остановка скроллинга")
+                driver.execute_script("console.log('Список диалогов не смог обновиться, выход из скроллинга');")
+                break
+
+        except Exception as e:
+            logger.exception(f"Произошла ошибка: {e}")
+            driver.execute_script("console.log('При скроллинге произошла непредвиденная ошибка', argument[0]);", e)
+            break
 
 
 def scan_new_chats(driver, chat_list, messages):
     previous_chats = []
+    driver.execute_script("console.log('Вызван метод поиска новых чатов');")
 
     while True:
         logger.info('scanning new chats..')
@@ -134,6 +175,8 @@ def scan_new_chats(driver, chat_list, messages):
                 chat_id = int(chat_id.replace('https://web.telegram.org/a/#', ''))
                 if chat_id not in chat_list:
                     logger.info("new_chat!")
+                    driver.execute_script(f"console.log('Обнаружен новый чат: {chat_id}');")
+                    driver.execute_script("console.log('Отправка сообщения');")
                     send_message(driver, chat, messages)
                     chat_list.add(chat_id)
                     to_saved_messages(driver)
@@ -147,7 +190,12 @@ def scan_new_chats(driver, chat_list, messages):
 def send_message(driver, chat, messages):
     chat.click()
     time.sleep(0.5)
-    input_field = driver.find_element(By.ID, 'editable-message-text')
+    try:
+        input_field = driver.find_element(By.ID, 'editable-message-text')
+    except NoSuchElementException:
+        chat.click()
+        time.sleep(0.3)
+        input_field = driver.find_element(By.ID, 'editable-message-text')
 
     driver.execute_script("arguments[0].click();", input_field)
     driver.execute_script(f'arguments[0].innerText = arguments[1];', input_field, messages['first_message'])
@@ -159,6 +207,7 @@ def send_message(driver, chat, messages):
 
     time.sleep(0.2)
     send_button.click()
+    driver.execute_script("console.log('Сообщение отправлено');")
 
     time.sleep(0.5)
 
@@ -195,7 +244,6 @@ def main(use_tokens):
         second_message = 'second_message'
     else:
         logger.info('Files successfully loaded')
-
 
     messages = {
         'first_message': first_message,
