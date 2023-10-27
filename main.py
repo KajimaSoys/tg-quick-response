@@ -15,12 +15,21 @@ options.add_argument(
 options.add_experimental_option('excludeSwitches', ['enable-logging'])
 
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s|%(name)s|%(levelname)s| %(message)s')
 logger = logging.getLogger(__name__)
-logging.getLogger('selenium').setLevel(logging.WARNING)
+logger.setLevel(logging.INFO)
 
-handler = RotatingFileHandler("parser.log", maxBytes=80000, backupCount=5)
-logger.addHandler(handler)
+formatter = logging.Formatter('%(asctime)s|%(name)s|%(levelname)s| %(message)s')
+
+file_handler = RotatingFileHandler("parser.log", maxBytes=80000, backupCount=5)
+file_handler.setFormatter(formatter)
+
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
+logging.getLogger('selenium').setLevel(logging.WARNING)
 
 
 def authorization(driver, use_tokens: bool):
@@ -90,7 +99,7 @@ def extract_chats(driver):
                     continue
                 except Exception as E:
                     driver.execute_script(
-                        "console.log('При парсинге идентификатора произошла ошибка', arguments[0]);", chat)
+                        "console.log('При парсинге идентификатора произошла ошибка');")
                     logger.exception(E)
                     continue
                 chat_id = int(chat_id.replace('https://web.telegram.org/a/#', ''))
