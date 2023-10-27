@@ -72,12 +72,13 @@ def extract_chats(driver):
     driver.execute_script("console.log('Поиск scrollable_container - div.chat-list');")
 
     scrollable_container = driver.find_element(By.CSS_SELECTOR, 'div.chat-list')
-    driver.execute_script("arguments[0].scrollBy(0, -20000);", scrollable_container)
 
     previous_chats = []
 
     driver.execute_script("console.log('scrollable_container найден');")
     driver.execute_script("console.log('Запущен сбор списка чатов');")
+
+    scroll_bottom(driver, scrollable_container)
 
     while True:
         chat_list_element = driver.find_elements(By.CSS_SELECTOR, 'div.chat-list div')[1]
@@ -105,19 +106,16 @@ def extract_chats(driver):
                 chat_id = int(chat_id.replace('https://web.telegram.org/a/#', ''))
                 chat_list.add(chat_id)
         if unchanged_count >= 1:
-            driver.execute_script("arguments[0].scrollBy(0, -200);", scrollable_container)
-            driver.execute_script("arguments[0].scrollBy(0, 400);", scrollable_container)
+            driver.execute_script("arguments[0].scrollBy(0, 200);", scrollable_container)
+            driver.execute_script("arguments[0].scrollBy(0, -400);", scrollable_container)
             time.sleep(1)
         if unchanged_count >= 5:
-            first_visible_chat = current_chats[0]
-            shift = int(first_visible_chat.get_attribute('style').replace('top: ', '').replace('px;', ''))
             driver.execute_script(
-                "console.log('Сбор чатов закончен, возврат к началу диалогов');")
-            back_top(driver, scrollable_container, shift)
+                "console.log('Сбор чатов закончен');")
             break
         previous_chats = current_chats
 
-        driver.execute_script("arguments[0].scrollBy(0, 2000);", scrollable_container)
+        driver.execute_script("arguments[0].scrollBy(0, -2000);", scrollable_container)
         time.sleep(1)
 
     logger.info(f'Parsed chat list: {chat_list}')
@@ -161,6 +159,42 @@ def back_top(driver, scrollable_container, shift):
             break
 
 
+def scroll_bottom(driver, scrollable_container):
+    attempts = 0
+    previous_chats = None
+
+    while True:
+        driver.execute_script("arguments[0].scrollBy(0, 2000);", scrollable_container)
+        time.sleep(0.5)
+
+        try:
+            chat_list_element = driver.find_elements(By.CSS_SELECTOR, 'div.chat-list div')[1]
+            current_chats = chat_list_element.find_elements(By.CSS_SELECTOR, 'div.ListItem.Chat')
+
+            if previous_chats == current_chats:
+                attempts += 1
+                time.sleep(0.3)
+            else:
+                attempts = 0
+
+            previous_chats = current_chats
+
+            if attempts >= 1:
+                driver.execute_script("arguments[0].scrollBy(0, -200);", scrollable_container)
+                driver.execute_script("arguments[0].scrollBy(0, 400);", scrollable_container)
+                time.sleep(1)
+
+            if attempts >= 5:
+                logger.info("Остановка скроллинга")
+                driver.execute_script("console.log('Список диалогов не смог обновиться, выход из скроллинга');")
+                break
+
+        except Exception as e:
+            logger.exception(f"Произошла ошибка: {e}")
+            driver.execute_script("console.log('При скроллинге произошла непредвиденная ошибка', argument[0]);", e)
+            break
+
+
 def scan_new_chats(driver, chat_list, messages):
     previous_chats = []
     driver.execute_script("console.log('Вызван метод поиска новых чатов');")
@@ -183,7 +217,7 @@ def scan_new_chats(driver, chat_list, messages):
                     continue
                 chat_id = int(chat_id.replace('https://web.telegram.org/a/#', ''))
                 if chat_id not in chat_list:
-                    logger.info("new_chat!")
+                    logger.info(f"new chat {chat_id} has been found")
                     driver.execute_script(f"console.log('Обнаружен новый чат: {chat_id}');")
                     driver.execute_script("console.log('Отправка сообщения');")
                     send_message(driver, chat, messages)
