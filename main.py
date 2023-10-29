@@ -78,7 +78,51 @@ def extract_chats(driver):
     driver.execute_script("console.log('scrollable_container найден');")
     driver.execute_script("console.log('Запущен сбор списка чатов');")
 
-    scroll_bottom(driver, scrollable_container)
+    # scroll_bottom(driver, scrollable_container)
+    driver.execute_script("console.log('Сбор чатов сверху вниз');")
+    logger.info('Сбор чатов сверху вниз')
+
+    while True:
+        chat_list_element = driver.find_elements(By.CSS_SELECTOR, 'div.chat-list div')[1]
+        current_chats = chat_list_element.find_elements(By.CSS_SELECTOR,
+                                                        'div.ListItem.Chat.chat-item-clickable.private')
+
+        if current_chats == previous_chats:
+            unchanged_count += 1
+            driver.execute_script("console.log(`Текущий список чатов идентичен предыдущему. unchanged_count = ${arguments[0]}`);", unchanged_count)
+        else:
+            unchanged_count = 0
+            for chat in current_chats:
+                try:
+                    chat_id = chat.find_element(By.CSS_SELECTOR, 'a').get_attribute('href')
+                except StaleElementReferenceException:
+                    driver.execute_script(
+                        "console.log('При парсинге идентификатора произошла ошибка StaleElementReferenceException');")
+                    logger.exception('StaleElementReferenceException occurred!')
+                    continue
+                except Exception as E:
+                    driver.execute_script(
+                        "console.log('При парсинге идентификатора произошла ошибка');")
+                    logger.exception(E)
+                    continue
+                chat_id = int(chat_id.replace('https://web.telegram.org/a/#', ''))
+                chat_list.add(chat_id)
+        if unchanged_count >= 1:
+            driver.execute_script("arguments[0].scrollBy(0, -200);", scrollable_container)
+            driver.execute_script("arguments[0].scrollBy(0, 400);", scrollable_container)
+            time.sleep(1)
+        if unchanged_count >= 5:
+            driver.execute_script(
+                "console.log('Первый этап сбора чатов закончен. Приступаю ко второму этапу..');")
+            break
+        previous_chats = current_chats
+
+        driver.execute_script("arguments[0].scrollBy(0, 1500);", scrollable_container)
+        time.sleep(1)
+
+    driver.execute_script("console.log('Сбор чатов снизу вверх');")
+    logger.info('Сбор чатов снизу вверх')
+    unchanged_count = 0
 
     while True:
         chat_list_element = driver.find_elements(By.CSS_SELECTOR, 'div.chat-list div')[1]
@@ -120,7 +164,6 @@ def extract_chats(driver):
 
     logger.info(f'Parsed chat list: {chat_list}')
     logger.info(f'Count of parsed chats: {len(chat_list)}')
-    driver.execute_script("console.log('Сбор чатов окончен');")
     driver.execute_script("console.log('Кол-во собранных чатов', arguments[0]);", len(chat_list))
     return chat_list
 
@@ -227,12 +270,12 @@ def scan_new_chats(driver, chat_list, messages):
                     logger.info(f'chat with {chat_id} already in chat_list')
 
         previous_chats = current_chats
-        time.sleep(0.5)
+        time.sleep(0.3)
 
 
 def send_message(driver, chat, messages):
     chat.click()
-    time.sleep(0.5)
+    time.sleep(0.35)
     try:
         input_field = driver.find_element(By.ID, 'editable-message-text')
     except NoSuchElementException:
@@ -248,18 +291,16 @@ def send_message(driver, chat, messages):
     time.sleep(0.1)
     send_button = driver.find_element(By.CSS_SELECTOR, 'button.Button.send')
 
-    time.sleep(0.2)
+    # time.sleep(0.1)
     send_button.click()
     driver.execute_script("console.log('Сообщение отправлено');")
 
-    time.sleep(0.5)
+    time.sleep(0.2)
 
     driver.execute_script("arguments[0].click();", input_field)
-    for char in messages['second_message']:
-        driver.execute_script(f"arguments[0].innerText += '{char}';", input_field)
-        driver.execute_script("var event = new Event('input', { 'bubbles': true }); arguments[0].dispatchEvent(event);",
-                              input_field)
-        time.sleep(0.1)
+    driver.execute_script(f'arguments[0].innerText = arguments[1];', input_field, messages['second_message'])
+    driver.execute_script("var event = new Event('input', { 'bubbles': true }); arguments[0].dispatchEvent(event);",
+                          input_field)
 
     time.sleep(0.5)
 
@@ -364,5 +405,5 @@ def set_item(driver, key, value):
 
 
 if __name__ == '__main__':
-    use_tokens = False
+    use_tokens = True
     main(use_tokens)
